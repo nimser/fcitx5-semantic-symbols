@@ -147,6 +147,7 @@ dependencies = [
     { name = "fastembed" },
     { name = "huggingface-hub" },
     { name = "numpy" },
+    { name = "tokenizers" },
 ]
 
 [package.metadata]
@@ -155,6 +156,7 @@ requires-dist = [
     { name = "fastembed", specifier = "==0.7.4" },
     { name = "huggingface-hub", specifier = "==1.31.0" },
     { name = "numpy", specifier = "==2.2.6" },
+    { name = "tokenizers", specifier = "==0.23.2" },
 ]
 
 [[package]]

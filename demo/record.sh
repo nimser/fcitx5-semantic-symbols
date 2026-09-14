@@ -3,11 +3,15 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "${1:-}" != --bounded ]; then
+    exec timeout --signal=TERM --kill-after=10s 180s bash "$0" --bounded
+fi
 work="$(mktemp -d)"
+echo "Demo work/log directory: $work" >&2
 outer_wayland="${WAYLAND_DISPLAY:-}"
 outer_display="${DISPLAY:-}"
 outer_swaysock="${SWAYSOCK:-}"
-for tool in sway swaymsg wf-recorder xdotool grim ffmpeg gifski alacritty nvim fcitx5 python3; do
+for tool in timeout sway swaymsg wf-recorder xdotool grim ffmpeg ffprobe gifski alacritty nvim fcitx5 python3; do
     command -v "$tool" >/dev/null || { echo "Missing: $tool" >&2; exit 1; }
 done
 
@@ -54,7 +58,8 @@ LUA
 : > "$work/RELEASE.md"
 
 # Check all preferred glyphs before starting the compositor or sending input.
-python3 - "$work/picks.json" <<'PY'
+echo 'Checking preferred glyphs (20s limit)...' >&2
+timeout -k 2s 20s python3 - "$work/picks.json" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -81,23 +86,39 @@ default_border none
 exec sh -c 'echo \$SWAYSOCK > $work/swaysock; echo \$DISPLAY > $work/xdisplay; echo \$WAYLAND_DISPLAY > $work/display; fcitx5 -d --disable=notifications >$work/fcitx.log 2>&1; sleep 3; touch $work/ready; env -u WAYLAND_DISPLAY XMODIFIERS=@im=fcitx alacritty --config-file $work/alacritty.toml -e nvim -u $work/init.lua -c startinsert $work/RELEASE.md'
 CONF
 
+echo 'Starting isolated compositor (40s limit)...' >&2
 export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman
 env -u WAYLAND_DISPLAY -u DISPLAY -u SWAYSOCK dbus-run-session -- sway -c "$work/sway.conf" >"$work/sway.log" 2>&1 &
 stage=$!
+stop_recorder() {
+    local signal tick
+    for signal in INT TERM KILL; do
+        kill -"$signal" "$recorder" 2>/dev/null || break
+        for ((tick=0; tick<20; tick++)); do
+            kill -0 "$recorder" 2>/dev/null || break 2
+            sleep 0.1
+        done
+    done
+    wait "$recorder" 2>/dev/null || true
+    recorder=""
+}
 cleanup() {
-    if [ -n "${recorder:-}" ]; then
-        kill -INT "$recorder" 2>/dev/null || true
-        wait "$recorder" 2>/dev/null || true
-    fi
+    local status=$?
+    trap '' INT TERM
+    if [ -n "${recorder:-}" ]; then stop_recorder; fi
     if [ -s "$work/swaysock" ]; then
         socket="$(<"$work/swaysock")"
         if [ -n "$socket" ] && [ "$socket" != "$outer_swaysock" ]; then
-            swaymsg -s "$socket" exit >/dev/null 2>&1 || true
+            timeout -k 1s 2s swaymsg -s "$socket" exit >/dev/null 2>&1 || true
         fi
     fi
-    kill "$stage" 2>/dev/null || true
+    kill -KILL "$stage" 2>/dev/null || true
     wait "$stage" 2>/dev/null || true
-    rm -rf "$work"
+    if [ "$status" -eq 0 ]; then
+        rm -rf "$work"
+    else
+        echo "Demo failed (exit $status); diagnostics retained in $work" >&2
+    fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -114,8 +135,8 @@ if [ -z "$DISPLAY" ] || [ "$DISPLAY" = "$outer_display" ] ||
     exit 1
 fi
 
-say() { xdotool type --delay "${2:-45}" "$1"; }
-press() { xdotool key "$1"; }
+say() { timeout -k 1s 5s xdotool type --delay "${2:-45}" "$1"; }
+press() { timeout -k 1s 5s xdotool key "$1"; }
 pick() {
     local down right
     read -r down right < <(python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))[sys.argv[2]])' "$work/picks.json" "$1")
@@ -137,6 +158,8 @@ WAYLAND_DISPLAY="$demo_wayland" wf-recorder -o HEADLESS-1 -f "$work/demo.mp4" \
 recorder=$!
 sleep 0.8
 
+echo 'Recording four short scenes...' >&2
+kill -0 "$recorder" || { echo 'Recorder exited; inspect recorder.log' >&2; exit 1; }
 say 'Shipped! '; pick celebrate
 press Return
 say 'Thanks, team '; pick grateful
@@ -146,13 +169,14 @@ press Return
 say 'H2 + I2 '; pick equilibrium; say ' 2HI'
 sleep 1.5
 
-kill -INT "$recorder" 2>/dev/null || true
-wait "$recorder"
-recorder=""
-WAYLAND_DISPLAY="$demo_wayland" grim "$here/screenshot.png" || true
+echo 'Finalizing capture (bounded signal escalation)...' >&2
+stop_recorder
+timeout -k 1s 5s ffprobe -v error "$work/demo.mp4"
+WAYLAND_DISPLAY="$demo_wayland" timeout -k 1s 5s grim "$work/screenshot.png"
 
 # Preserve the compact canvas in the README animation.
-ffmpeg -y -loglevel error -i "$work/demo.mp4" -vf 'fps=16' "$work/f%04d.png"
-gifski --quiet --fps 16 --width 820 --quality 85 --lossy-quality 75 -o "$here/demo.gif" "$work"/f*.png
-cp "$work/demo.mp4" "$here/demo.mp4"
+echo 'Encoding preview (30s frames, 60s GIF limit)...' >&2
+timeout -k 2s 30s ffmpeg -y -loglevel error -i "$work/demo.mp4" -vf 'fps=16' "$work/f%04d.png"
+timeout -k 2s 60s gifski --quiet --fps 16 --width 820 --quality 85 --lossy-quality 75 -o "$work/demo.gif" "$work"/f*.png
+cp "$work"/{demo.gif,demo.mp4,screenshot.png} "$here/"
 printf 'demo.gif %s, demo.mp4 %s\n' "$(du -h "$here/demo.gif" | cut -f1)" "$(du -h "$here/demo.mp4" | cut -f1)"

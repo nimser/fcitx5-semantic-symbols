@@ -7,7 +7,10 @@ import json
 import os
 from pathlib import Path
 import socket
+import tempfile
 import unicodedata
+
+from descriptions import check_token_lengths, digest, load_bundle
 
 MODEL = "BAAI/bge-small-en-v1.5"
 MODEL_REPO = "qdrant/bge-small-en-v1.5-onnx-q"
@@ -165,34 +168,68 @@ def catalogue():
     return sorted(entries.values(), key=lambda item: item["glyph"])
 
 
+def load_vectors(path, np, count):
+    try:
+        vectors = np.load(path, allow_pickle=False)
+        if vectors.shape != (count, 384) or not np.isfinite(vectors).all():
+            raise ValueError("Invalid vector dimensions or values")
+        return vectors
+    except (OSError, ValueError, EOFError) as error:
+        raise RuntimeError("Invalid index: rerun fcitx5-semantic-setup") from error
+
+
 class Search:
-    def __init__(self, prepare=False):
+    def __init__(self, prepare=False, descriptions=None, offline=False, release=True):
         import numpy as np
         from fastembed import TextEmbedding
         from huggingface_hub import snapshot_download
 
         self.np = np
         self.entries = catalogue()
+        self.bundle = None
+        if descriptions is None:
+            bundled = Path(__file__).with_name("descriptions.json")
+            descriptions = bundled if bundled.exists() else False
+        if descriptions is not False:
+            self.entries, self.bundle = load_bundle(descriptions, self.entries, release=release)
+        self.description_sha256 = digest(self.bundle) if self.bundle else None
+        self.catalogue_sha256 = digest(self.entries)
         fingerprint = hashlib.sha256(json.dumps([MODEL, MODEL_REVISION, self.entries], ensure_ascii=False).encode()).hexdigest()[:16]
         STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
         index = STATE / f"index-{fingerprint}.npy"
         model_path = snapshot_download(
-            MODEL_REPO, revision=MODEL_REVISION, cache_dir=STATE / "models", local_files_only=not prepare,
+            MODEL_REPO, revision=MODEL_REVISION, cache_dir=STATE / "models", local_files_only=offline or not prepare,
             allow_patterns=["config.json", "model_optimized.onnx", "special_tokens_map.json", "tokenizer_config.json", "tokenizer.json"],
         )
+        if self.bundle:
+            from tokenizers import Tokenizer
+
+            check_token_lengths(self.entries, Tokenizer.from_file(str(Path(model_path) / "tokenizer.json")))
         self.model = TextEmbedding(MODEL, specific_model_path=model_path, threads=2, local_files_only=True)
-        if not index.exists():
-            if not prepare:
-                raise RuntimeError("Index missing: run fcitx5-semantic-setup first")
-            vectors = np.array(list(self.model.embed([entry["text"] for entry in self.entries])), dtype=np.float32)
-            vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
-            temporary = index.with_suffix(".tmp")
-            with temporary.open("wb") as stream:
-                np.save(stream, vectors, allow_pickle=False)
-            temporary.replace(index)
-        self.vectors = np.load(index, allow_pickle=False)
-        if self.vectors.shape[0] != len(self.entries):
-            raise RuntimeError("Invalid index: rerun fcitx5-semantic-setup")
+        if not index.exists() and not prepare:
+            raise RuntimeError("Index missing: run fcitx5-semantic-setup first")
+        if prepare:
+            with index.with_suffix(".lock").open("w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                rebuild = not index.exists()
+                if not rebuild:
+                    try:
+                        load_vectors(index, np, len(self.entries))
+                    except RuntimeError:
+                        rebuild = True
+                if rebuild:
+                    vectors = np.array(list(self.model.embed([entry["text"] for entry in self.entries])), dtype=np.float32)
+                    vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
+                    temporary = None
+                    try:
+                        with tempfile.NamedTemporaryFile(dir=STATE, suffix=".tmp", delete=False) as stream:
+                            temporary = Path(stream.name)
+                            np.save(stream, vectors, allow_pickle=False)
+                        temporary.replace(index)
+                    finally:
+                        if temporary:
+                            temporary.unlink(missing_ok=True)
+        self.vectors = load_vectors(index, np, len(self.entries))
 
     def search(self, query, limit=28):
         query = " ".join(query.split())[:256]
@@ -255,8 +292,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--query")
+    parser.add_argument("--descriptions", type=Path)
+    parser.add_argument("--baseline", action="store_true", help="Ignore bundled descriptions")
+    parser.add_argument("--offline", action="store_true", help="Reindex using cached model files only")
     args = parser.parse_args()
-    search = Search(prepare=args.prepare)
+    if args.baseline and args.descriptions:
+        parser.error("--baseline and --descriptions are mutually exclusive")
+    search = Search(prepare=args.prepare, descriptions=False if args.baseline else args.descriptions,
+                    offline=args.offline)
     if args.query:
         print(json.dumps(search.search(args.query), ensure_ascii=False, indent=2))
     elif not args.prepare:

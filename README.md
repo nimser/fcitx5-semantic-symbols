@@ -117,7 +117,7 @@ SEMANTIC_TEST_PYTHON=~/.local/share/fcitx5/semantic-symbols/.venv/bin/python \
 ```
 
 The native test builds the addon, starts a private Fcitx5 instance with a stub
-search service, and asserts insertion, cancellation, backspace, paging, the
+search service, and asserts insertion, cancellation, backspace, grid navigation, the
 discarding of stale replies, and the password and composition gates. The
 retrieval test asserts that plain-language queries actually rank the right
 glyph.
@@ -127,10 +127,10 @@ glyph.
 Ideas worth stealing from the web-app generation of emoji search:
 
 - **LLM-written descriptions.** [emojeez](https://github.com/badrex/emojeez)
-  generates a rich description per emoji before embedding. Hand-written intent
-  text is in here for ~120 glyphs and it measurably fixes the worst queries;
-  generating it for the whole catalogue is the single largest accuracy win
-  available.
+  generates descriptions before embedding. The [description pipeline](DESCRIPTIONS.md)
+  provides a frozen benchmark, provenance and coverage validation, exact token
+  limits, offline reindexing and a gated release packager. No generated catalogue
+  is bundled: it must beat the hand-written baseline before shipping.
 - **Multilingual queries.** A multilingual encoder would let the query be typed
   in the language you are already writing in — which, in an input method, is
   the obvious thing to want.

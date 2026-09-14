@@ -17,7 +17,14 @@ pkg-config --atleast-version=5.1.22 Fcitx5Core || {
 }
 
 mkdir -p "$project" "$lib" "$data/addon" "$config/systemd/user"
-[ "$source" = "$project" ] || cp -f "$source"/{addon.cpp,search.py,pyproject.toml,uv.lock} "$project/"
+if [ "$source" != "$project" ]; then
+    cp -f "$source"/{addon.cpp,search.py,descriptions.py,pyproject.toml,uv.lock} "$project/"
+    if [ -f "$source/descriptions.json" ]; then
+        cp -f "$source/descriptions.json" "$project/"
+    else
+        rm -f "$project/descriptions.json"
+    fi
+fi
 
 uv sync --frozen --project "$project" --python 3.13
 "$project/.venv/bin/python" "$project/search.py" --prepare
@@ -78,4 +85,4 @@ UNIT
 systemctl --user daemon-reload
 systemctl --user enable --now fcitx5-semantic-symbols.service
 systemctl --user restart fcitx5.service 2>/dev/null || echo 'Restart Fcitx5 to load the addon.'
-printf '%s\n' 'Installed. Press Control+Alt+U and describe the symbol you want.'
+printf '%s\n' 'Installed. Press Control+Shift+U and describe the symbol you want.'
