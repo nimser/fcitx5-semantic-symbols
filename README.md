@@ -7,7 +7,7 @@ meaning, entirely on your machine.
 ![Semantic symbol search in Fcitx5](demo/demo.gif)
 
 *Real input in Alacritty + Neovim: short queries, arrow selection, double-space insertion.
-[Watch the MP4](demo/demo.mp4) · [Record it](demo/README.md).*
+[Record it](demo/README.md).*
 
 Press `Control+Shift+U`, describe what you mean, and the glyphs arrive in a grid
 under the caret: emoji and visible Unicode symbols ranked together, the name of
