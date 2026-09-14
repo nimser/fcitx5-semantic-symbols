@@ -6,7 +6,7 @@ meaning, entirely on your machine.
 
 ![Semantic symbol search in Fcitx5](demo/demo.gif)
 
-*Recorded in a headless compositor by [`demo/record.sh`](demo/record.sh) — nothing staged, nothing sped up.*
+*Scripted typing through the real addon in a headless compositor.*
 
 Press `Control+Shift+U`, describe what you mean, and the glyphs arrive in a grid
 under the caret: emoji and visible Unicode symbols ranked together, the name of
@@ -100,6 +100,13 @@ Fcitx5. Rerun it after an Fcitx5 ABI bump.
 | `Control+U` | Clear the query |
 | `Enter`, or a second space | Insert the highlighted glyph |
 | `Escape` | Cancel |
+
+## Releases
+
+[v0.1.0](https://github.com/nimser/fcitx5-semantic-symbols/releases/tag/v0.1.0)
+is the initial published grid version. Release tags are immutable: demo and
+bug fixes increment the patch version; new search capabilities increment the
+minor version. Development on `main` is not a release until tagged.
 
 ## Tests
 
