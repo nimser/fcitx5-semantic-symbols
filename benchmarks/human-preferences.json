@@ -1,37 +1,74 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "purpose": "Human preference signals for judging retrieval changes. These are one user's picks, recorded to inform the LLM-description pilot. They are NOT expected outputs: do not gate on them, do not tune generators or embeddings against them, and do not treat disagreement as a bug.",
   "rules": [
     "Multi-glyph combinations are a valid answer only for complex emotions or compound ideas; single glyphs stay the default.",
-    "'>' marks strict preference between tiers; entries inside a tier are similar in rank ('~')."
+    "'>' marks strict preference between tiers; entries inside a tier are similar in rank ('~').",
+    "Ratings may be revised at any time; earlier versions live in history, never silently discarded.",
+    "accept_better=true means the rater explicitly welcomes suggestions better than their own picks."
   ],
   "ratings": [
     {
       "prompt": "cold heart",
       "tiers": [
-        ["🧊💔"],
-        ["🩵", "🥶"]
+        [
+          "🧊💔🥶"
+        ],
+        [
+          "🩵",
+          "🥶"
+        ]
       ],
       "rater": "owner",
-      "date": "2026-09-14"
+      "date": "2026-09-14",
+      "accept_better": true,
+      "history": [
+        {
+          "date": "2026-09-14",
+          "tiers": [
+            [
+              "🧊💔"
+            ],
+            [
+              "🩵",
+              "🥶"
+            ]
+          ]
+        }
+      ]
     },
     {
       "prompt": "party animal",
       "tiers": [
-        ["🕺🍻🦥", "💃🍹👯"],
-        ["🍻", "🍾", "🍸"]
+        [
+          "🕺🍻🦥",
+          "💃🍹👯"
+        ],
+        [
+          "🍻",
+          "🍾",
+          "🍸"
+        ]
       ],
       "rater": "owner",
-      "date": "2026-09-14"
+      "date": "2026-09-14",
+      "accept_better": true,
+      "history": []
     },
     {
       "prompt": "happy tears",
       "tiers": [
-        ["🤣"],
-        ["🥲"]
+        [
+          "🤣"
+        ],
+        [
+          "🥲"
+        ]
       ],
       "rater": "owner",
-      "date": "2026-09-14"
+      "date": "2026-09-14",
+      "accept_better": true,
+      "history": []
     }
   ]
 }

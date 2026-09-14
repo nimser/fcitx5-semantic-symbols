@@ -17,7 +17,12 @@ Do not send held-out queries to the generator or tune against their results.
 If they are used for tuning, retire that split and add new held-out cases.
 `benchmarks/human-preferences.json` records individual human picks as tiered
 preference signals; the same no-tuning rule applies to them, and they never
-gate a release.
+gate a release. Collect more with `python benchmarks/rate.py`, which walks
+`prompts-to-rate.json`, shows the current results for contrast and accepts
+answers like `🧊💔🥶 > 🩵 ~ 🥶`. Raters change their minds: a new answer for a
+phrase moves the old one into `history` instead of overwriting it. Three
+ratings are far too few to conclude anything; treat them as examples of the
+kind of judgement the pilot must respect, not as a target to hit.
 The exporter reads only catalogue glyphs and labels, not benchmark queries.
 
 With the pinned embedding model already cached:
