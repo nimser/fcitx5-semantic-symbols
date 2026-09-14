@@ -4,18 +4,16 @@ Describe what you mean, get the glyph. A native [Fcitx5](https://fcitx-im.org/)
 input mode that searches emoji **and** visible Unicode symbols together, by
 meaning, entirely on your machine.
 
-```
-Control+Shift+U  ->  not sure              ->  ❓ 🤞 😕 ❔
-Control+Shift+U  ->  goes both ways        ->  ⇄ ↔ ⇌
-Control+Shift+U  ->  roughly the same      ->  ≈ ≡ ≅
-Control+Shift+U  ->  celebrate our success ->  🎉 👏 🙌 🥳 🏆
-Control+Shift+U  ->  at most               ->  ≤
-```
+![Semantic symbol search in Fcitx5](demo/demo.gif)
 
-The glyphs sit unlabelled in a row with the highlighted one's name on the line
-below, so you read meaning only when you need it. Enter inserts, and so does a
-second consecutive space — a trailing space is inert for the search, so phrases
-keep their separators and your hand never leaves the home row. Escape cancels.
+*Recorded in a headless compositor by [`demo/record.sh`](demo/record.sh) — nothing staged, nothing sped up.*
+
+Press `Control+Shift+U`, describe what you mean, and the glyphs arrive in a grid
+under the caret: emoji and visible Unicode symbols ranked together, the name of
+the highlighted one on its own line so nothing shifts as you move. Arrow keys
+walk the grid in both directions. Enter inserts, and so does a second
+consecutive space — a trailing space is inert for the search, so phrases keep
+their separators and your hand never leaves the home row. Escape cancels.
 No browser tab, no clipboard round trip, no network.
 
 ## Why this exists
@@ -32,9 +30,17 @@ It also refuses to treat mathematical and typographic symbols as second-class:
 
 ## How it works
 
-- **Native addon** (`addon.cpp`, ~260 lines of C++) registers a Fcitx5
+- **Native addon** (`addon.cpp`, ~300 lines of C++) registers a Fcitx5
   `TempMode`. It owns the keyboard only while the popup is open, then hands
   control straight back to your regular input method.
+- **The grid is one candidate per line.** classicui lays candidates out in a
+  single row or column and never wraps, so each line is built as one candidate
+  whose text holds seven glyphs, and the selection is painted inside the line
+  rather than on it. That buys a real matrix, and xy navigation with it.
+- **The popup follows the caret** because the query rides the client preedit,
+  which is what makes applications report where the cursor is. It carries
+  `DontCommit`, so losing focus mid-search never types the query into your
+  document.
 - **Search service** (`search.py`) holds a quantized
   [BGE-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) ONNX model
   and a precomputed matrix of catalogue embeddings, and answers queries over a
@@ -89,8 +95,8 @@ Fcitx5. Rerun it after an Fcitx5 ABI bump.
 | --- | --- |
 | `Control+Shift+U` | Open, or close when already open |
 | Type freely | Refine the query; a single space extends it |
-| Arrows, `Tab` / `Shift+Tab` | Move through candidates |
-| `Page Up` / `Page Down` | Page through candidates |
+| `Left` / `Right`, `Tab` / `Shift+Tab` | Move one glyph |
+| `Up` / `Down` | Move one row |
 | `Control+U` | Clear the query |
 | `Enter`, or a second space | Insert the highlighted glyph |
 | `Escape` | Cancel |
@@ -121,9 +127,6 @@ Ideas worth stealing from the web-app generation of emoji search:
 - **Multilingual queries.** A multilingual encoder would let the query be typed
   in the language you are already writing in — which, in an input method, is
   the obvious thing to want.
-- **A real grid.** classicui lays candidates out in one row or one column and
-  clips auxiliary text to a single line, so several rows of glyphs need either
-  an upstream change or a custom candidate window.
 - **Usage learning.** Rank recently chosen glyphs higher, the way every real
   input method does with words.
 

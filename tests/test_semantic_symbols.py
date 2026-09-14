@@ -60,7 +60,10 @@ class NativeAddonTests(unittest.TestCase):
                         if query == "slow":
                             time.sleep(0.15)
                         glyph = "✓" if query == "check mark" else "∞" if query == "forever" else "?"
-                        connection.sendall(f"{glyph}\tresult\n".encode())
+                        # One selected glyph plus narrow fillers: two grid lines
+                        # and a short third exercise wrapping and xy movement.
+                        rows = [f"{glyph}\tresult"] + [f"{i}\tfiller {i}" for i in range(1, 16)]
+                        connection.sendall("".join(row + "\n" for row in rows).encode())
 
             thread = threading.Thread(target=respond)
             thread.start()

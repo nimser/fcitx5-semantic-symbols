@@ -194,7 +194,7 @@ class Search:
         if self.vectors.shape[0] != len(self.entries):
             raise RuntimeError("Invalid index: rerun fcitx5-semantic-setup")
 
-    def search(self, query, limit=18):
+    def search(self, query, limit=28):
         query = " ".join(query.split())[:256]
         if not query:
             return []

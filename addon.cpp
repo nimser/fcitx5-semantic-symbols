@@ -17,12 +17,17 @@
 #include <cstring>
 #include <functional>
 #include <mutex>
+#include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <thread>
 
 namespace {
 using namespace fcitx;
 using Rows = std::vector<std::pair<std::string, std::string>>;
+
+constexpr int columns = 7;
+constexpr int maxRows = 4;
 
 struct Result {
     Rows rows;
@@ -82,7 +87,7 @@ Result lookup(const std::string &query) {
     Rows rows;
     std::istringstream stream(response);
     std::string line;
-    while (rows.size() < 18 && std::getline(stream, line)) {
+    while (rows.size() < static_cast<size_t>(columns * maxRows) && std::getline(stream, line)) {
         auto tab = line.find('\t');
         if (tab != std::string::npos && tab > 0) {
             rows.emplace_back(line.substr(0, tab), line.substr(tab + 1));
@@ -96,25 +101,54 @@ struct State {
     uint64_t generation = 0;
     Rows rows;
     std::string status;
+    int cursor = 0;
 };
 
-class SymbolCandidate : public CandidateWord {
+// Decode one UTF-8 codepoint, returning its length in bytes.
+std::pair<uint32_t, size_t> decode(std::string_view text) {
+    const auto lead = static_cast<unsigned char>(text.front());
+    size_t length = lead < 0x80 ? 1 : lead < 0xe0 ? 2 : lead < 0xf0 ? 3 : 4;
+    if (length > text.size()) {
+        return {lead, 1};
+    }
+    uint32_t value = lead & (0xff >> (length + 1));
+    for (size_t i = 1; i < length; ++i) {
+        value = (value << 6) | (static_cast<unsigned char>(text[i]) & 0x3f);
+    }
+    return {length == 1 ? lead : value, length};
+}
+
+// Emoji occupy two cells; most symbols occupy one. Pad the narrow ones so the
+// grid columns do not shear.
+bool isWide(std::string_view glyph) {
+    for (size_t i = 0; i < glyph.size();) {
+        auto [value, length] = decode(glyph.substr(i));
+        // Dingbats and misc symbols stay narrow unless a variation selector
+        // asks for the emoji presentation.
+        if (value == 0xfe0f || (value >= 0x1f300 && value <= 0x1faff) ||
+            (value >= 0x3000 && value <= 0x303f)) {
+            return true;
+        }
+        i += length;
+    }
+    return false;
+}
+
+// A whole grid line. The selection is painted per glyph inside the line, so the
+// candidate itself never highlights.
+class GridLine : public CandidateWord {
 public:
-    SymbolCandidate(std::string glyph, std::string label,
-                    std::function<void(InputContext *, std::string)> commit)
-        : CandidateWord(Text(glyph)), glyph_(std::move(glyph)), commit_(std::move(commit)) {
-        // The name belongs on the preview line, not next to every glyph.
-        FCITX_UNUSED(label);
+    GridLine(Text text, int first, std::function<void(InputContext *, int)> focus)
+        : CandidateWord(std::move(text)), first_(first), focus_(std::move(focus)) {
         setCustomLabel(Text());
     }
     void select(InputContext *ic) const override {
-        auto commit = commit_;
-        auto glyph = glyph_;
-        commit(ic, std::move(glyph));
+        auto focus = focus_;
+        focus(ic, first_);
     }
 private:
-    std::string glyph_;
-    std::function<void(InputContext *, std::string)> commit_;
+    int first_;
+    std::function<void(InputContext *, int)> focus_;
 };
 
 class SemanticSymbols : public AddonInstance, public SimpleTempMode<State> {
@@ -168,6 +202,7 @@ public:
         auto *state = property(ic);
         state->query.clear();
         state->rows.clear();
+        state->cursor = 0;
         state->status = "Describe an emoji or symbol";
         ++state->generation;
         state->setActive(true);
@@ -181,6 +216,7 @@ public:
             ++state->generation;
             state->query.clear();
             state->rows.clear();
+            state->cursor = 0;
             state->status.clear();
             state->setActive(false);
         }
@@ -200,37 +236,32 @@ public:
             reset(ic);
             return true;
         }
-        auto candidates = ic->inputPanel().candidateList();
+        const auto total = static_cast<int>(state->rows.size());
         // A trailing space is inert for the search, so the second one commits
         // while multi-word queries keep their separators.
         const bool spaceCommits =
             key.check(FcitxKey_space) && !state->query.empty() && state->query.back() == ' ';
         if (key.check(FcitxKey_Return) || key.check(FcitxKey_KP_Enter) || spaceCommits) {
-            if (candidates && !candidates->empty() && candidates->cursorIndex() >= 0) {
-                candidates->candidate(candidates->cursorIndex()).select(ic);
+            if (state->cursor < total) {
+                auto glyph = state->rows[state->cursor].first;
+                reset(ic);
+                ic->commitString(glyph);
             }
             return true;
         }
-        if (key.check(FcitxKey_Right) || key.check(FcitxKey_Left) || key.check(FcitxKey_Down) ||
-            key.check(FcitxKey_Up) || key.check(FcitxKey_Tab) || key.check(Key("Shift+Tab"))) {
-            if (candidates && candidates->toCursorMovable()) {
-                if (key.check(FcitxKey_Left) || key.check(FcitxKey_Up) || key.check(Key("Shift+Tab"))) {
-                    candidates->toCursorMovable()->prevCandidate();
-                } else {
-                    candidates->toCursorMovable()->nextCandidate();
-                }
-                showHeader(ic);
-                ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-            }
-            return true;
-        }
-        if (key.check(FcitxKey_Page_Up) || key.check(FcitxKey_Page_Down)) {
-            if (candidates && candidates->toPageable()) {
-                auto *pages = candidates->toPageable();
-                if (key.check(FcitxKey_Page_Up) && pages->hasPrev()) { pages->prev(); }
-                if (key.check(FcitxKey_Page_Down) && pages->hasNext()) { pages->next(); }
-                showHeader(ic);
-                ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        int step = 0;
+        if (key.check(FcitxKey_Right) || key.check(FcitxKey_Tab)) { step = 1; }
+        if (key.check(FcitxKey_Left) || key.check(Key("Shift+Tab"))) { step = -1; }
+        if (key.check(FcitxKey_Down)) { step = columns; }
+        if (key.check(FcitxKey_Up)) { step = -columns; }
+        if (step != 0) {
+            if (total > 0) {
+                auto target = state->cursor + step;
+                // Vertical moves off the grid fall back to the nearest end.
+                if (target < 0) { target = std::abs(step) == 1 ? total - 1 : 0; }
+                if (target >= total) { target = std::abs(step) == 1 ? 0 : total - 1; }
+                state->cursor = target;
+                show(ic);
             }
             return true;
         }
@@ -256,6 +287,7 @@ public:
         auto generation = ++state->generation;
         if (state->query.empty()) {
             state->rows.clear();
+            state->cursor = 0;
             state->status = "Describe an emoji or symbol";
             show(ic);
         } else {
@@ -274,6 +306,7 @@ public:
                 auto *current = property(context);
                 if (!current->isActive() || current->generation != generation) { return; }
                 current->rows = std::move(result.rows);
+                current->cursor = 0;
                 current->status = result.error.empty() ? "Space or Enter inserts; Esc cancels" : result.error;
                 show(context);
             };
@@ -284,35 +317,52 @@ public:
     }
 
 private:
-    // One reserved line: the typed query, then the highlighted glyph's name.
+    // The name of the selected glyph, below the grid so its width never moves
+    // the glyphs. The query rides the client preedit when the application
+    // supports one, which is also what makes the popup track the caret.
     void showHeader(InputContext *ic) {
         auto *state = property(ic);
         auto &panel = ic->inputPanel();
         std::string name = state->status;
-        auto candidates = panel.candidateList();
-        if (candidates && candidates->toBulkCursor()) {
-            auto index = candidates->toBulkCursor()->globalCursorIndex();
-            if (index >= 0 && static_cast<size_t>(index) < state->rows.size()) {
-                name = state->rows[index].second;
-            }
+        if (state->cursor < static_cast<int>(state->rows.size())) {
+            name = state->rows[state->cursor].second;
         }
-        panel.setAuxUp(Text(state->query));
         panel.setAuxDown(Text(std::move(name)));
+        if (ic->capabilityFlags().test(CapabilityFlag::Preedit)) {
+            // DontCommit keeps the query out of the document when focus is
+            // lost; fcitx commits a client preedit on focus out otherwise.
+            Text preedit(state->query,
+                         TextFormatFlags{TextFormatFlag::Underline} | TextFormatFlag::DontCommit);
+            preedit.setCursor(static_cast<int>(state->query.size()));
+            panel.setClientPreedit(preedit);
+            panel.setAuxUp(Text());
+        } else {
+            panel.setAuxUp(Text(state->query));
+        }
+        ic->updatePreedit();
     }
 
     void show(InputContext *ic) {
         auto *state = property(ic);
         auto &panel = ic->inputPanel();
         auto list = std::make_unique<CommonCandidateList>();
-        list->setPageSize(14);
-        list->setLayoutHint(CandidateLayoutHint::Horizontal);
-        for (const auto &[glyph, label] : state->rows) {
-            list->append<SymbolCandidate>(glyph, label, [this](InputContext *context, std::string value) {
-                reset(context);
-                context->commitString(value);
+        list->setPageSize(maxRows);
+        list->setLayoutHint(CandidateLayoutHint::Vertical);
+        const auto total = static_cast<int>(state->rows.size());
+        for (int first = 0; first < total; first += columns) {
+            Text line;
+            for (int i = first; i < std::min(first + columns, total); ++i) {
+                auto cell = " " + state->rows[i].first + (isWide(state->rows[i].first) ? " " : "  ");
+                line.append(std::move(cell),
+                            i == state->cursor ? TextFormatFlag::HighLight : TextFormatFlag::NoFlag);
+            }
+            list->append<GridLine>(std::move(line), first, [this](InputContext *context, int index) {
+                property(context)->cursor = index;
+                show(context);
             });
         }
-        list->setGlobalCursorIndex(state->rows.empty() ? -1 : 0);
+        // The selection is drawn per glyph, so no line may highlight itself.
+        list->setGlobalCursorIndex(-1);
         panel.setCandidateList(std::move(list));
         showHeader(ic);
         ic->updateUserInterface(UserInterfaceComponent::InputPanel);
