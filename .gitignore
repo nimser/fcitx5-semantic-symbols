@@ -1,3 +1,4 @@
 .devcontainer
 AGENTS.md
 __pycache__/
+.agents/
