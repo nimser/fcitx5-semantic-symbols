@@ -45,7 +45,7 @@ Comment=Local semantic emoji and Unicode search
 Type=SharedLibrary
 Library=$lib/libsemantic-symbols
 Category=Module
-Version=0.1.0
+Version=0.1.1
 OnDemand=False
 
 [Addon/Dependencies]

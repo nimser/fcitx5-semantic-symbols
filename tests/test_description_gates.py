@@ -204,6 +204,12 @@ class RecorderTests(unittest.TestCase):
     def test_shell_syntax(self):
         subprocess.run(["bash", "-n", str(ROOT / "demo/record.sh")], check=True)
 
+    def test_capture_stack_and_cleanup_scope(self):
+        script = (ROOT / "demo/record.sh").read_text()
+        self.assertIn("wf-recorder -D --no-dmabuf", script)
+        self.assertNotRegex(script, r"\b(?:pkill|killall)\b")
+        self.assertLess(script.index("if actual != expected:"), script.index('cp "$work"/{demo.gif'))
+
     def test_stubborn_recorder_is_killed(self):
         script = (ROOT / "demo/record.sh").read_text()
         function = "stop_recorder() {" + script.split("stop_recorder() {", 1)[1].split("\ncleanup()", 1)[0]

@@ -84,12 +84,18 @@ int main() {
                 assert(key("Up"));
                 assert(key("Left"));
                 assert(ic->inputPanel().auxDown().toString() == "result");
-                // A single space extends the query; the popup keeps its glyphs.
+                assert(key("Right"));
+                assert(ic->inputPanel().auxDown().toString() == "filler 1");
+                // A trailing space must preserve a selection across asynchronous replies.
                 assert(key("space"));
                 assert(ic->inputPanel().clientPreedit().toString() == "check mark ");
                 assert(ic->inputPanel().candidateList() &&
                        !ic->inputPanel().candidateList()->empty());
-                frontend->call<ITestFrontend::pushCommitExpectation>("✓");
+                stage = 5;
+                ticks = 0;
+            } else if (stage == 5 && ticks > 20) {
+                assert(ic->inputPanel().auxDown().toString() == "filler 1");
+                frontend->call<ITestFrontend::pushCommitExpectation>("1");
                 assert(key("space"));
                 assert(ic->inputPanel().clientPreedit().toString().empty());
                 assert(key("Control+Shift+U"));

@@ -69,7 +69,7 @@ class NativeAddonTests(unittest.TestCase):
             thread.start()
             env = {**os.environ, "XDG_CONFIG_HOME": str(root / "config"), "XDG_DATA_HOME": str(root / "data"),
                    "XDG_CACHE_HOME": str(root / "cache"), "XDG_RUNTIME_DIR": str(root / "runtime"),
-                   "FCITX_ADDON_DIRS": "/usr/lib/fcitx5", "DISPLAY": "", "WAYLAND_DISPLAY": "",
+                   "FCITX_ADDON_DIRS": os.environ.get("FCITX_ADDON_DIRS", "/usr/lib/fcitx5"), "DISPLAY": "", "WAYLAND_DISPLAY": "",
                    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/nonexistent"}
             try:
                 subprocess.run([str(binary)], env=env, check=True, timeout=15)

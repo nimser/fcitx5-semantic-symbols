@@ -283,6 +283,12 @@ public:
                 return true;
             }
             state->query += text;
+            // A trailing space changes no search terms and must not reset the selection.
+            if (text == " " && state->query.size() > 1) {
+                showHeader(ic);
+                ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+                return true;
+            }
         }
         auto generation = ++state->generation;
         if (state->query.empty()) {

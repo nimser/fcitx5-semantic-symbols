@@ -1,29 +1,27 @@
 # Recording
 
-Run on a graphical Linux host with the addon installed and its search service
-running:
+Run `./demo/record.sh` with the addon installed and its search service running.
+It works inside a container; a host desktop is not required.
 
-```sh
-./demo/record.sh
-```
+The v0.1.0 stack is retained: headless sway + Xwayland, Alacritty + Neovim,
+Fcitx5, xdotool, wf-recorder, grim, FFmpeg and gifski. Also required: D-Bus,
+GNU timeout, Python 3, software OpenGL, Noto Serif and Noto Color Emoji.
+Fcitx5 must be at least 5.1.22, including its loaded libraries.
 
-Dependencies: sway (with Xwayland), alacritty, nvim, Fcitx5, xdotool, swaymsg,
-wf-recorder, grim, ffmpeg (including ffprobe), gifski, GNU timeout and Python 3.
+The 600×360 scene types short messages and searches `celebrate` → 🎉,
+`grateful` → 🙏, `exhausted` → 🥱 and `equilibrium` → ⇌. Arrow keys select
+actual results; double-space inserts them. The saved editor buffer must match
+all four intended glyphs before the script publishes any media.
 
-The script uses a private headless compositor and D-Bus session. It checks the
-preferred glyphs against the search service before recording, rejects missing
-or outer-session display names before sending input, and shuts down its own
-compositor by its IPC socket. Progress messages identify each stage. A 180-second
-deadline bounds the run, with a 10-second kill grace; external commands have
-shorter limits and recorder shutdown escalates through INT, TERM and KILL.
-On failure, the printed work directory retains compositor/recorder logs and
-partial media. Published media is replaced only after encoding succeeds.
+The compositor, D-Bus session and input-method profile are isolated. Font
+configuration is preserved. Input is refused if display names are missing or
+match the outer session. Cleanup uses captured PIDs and the private compositor
+socket, never process-name searches.
 
-The 820×500 scene uses short messages: `celebrate` → 🥳, `grateful` → 🙏,
-`exhausted` → 😴, and `equilibrium` → ⇌ in a reversible reaction. Arrow keys
-browse the actual ranked candidates; double-space inserts the selection.
+wf-recorder uses continuous CPU capture on an 8-bit output, including idle
+frames. A 240-second deadline bounds the run; recorder shutdown escalates
+through INT, TERM and KILL. Progress messages identify each stage, and failures
+retain logs and partial media in the printed work directory.
 
-Outputs overwrite `demo.gif`, `demo.mp4` and `screenshot.png`. Review the whole
-recording before committing: check the selected glyphs, popup clipping, focus,
-error banners and unused space. The committed media is the v0.1.0 recording;
-the compact script has not yet been visually verified.
+Outputs are `demo.gif`, `demo.mp4` and `screenshot.png`. Review the recording for
+clipping, missing glyphs and error banners before committing it.
