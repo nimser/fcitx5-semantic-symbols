@@ -15,6 +15,9 @@ making broad accuracy claims.
 
 Do not send held-out queries to the generator or tune against their results.
 If they are used for tuning, retire that split and add new held-out cases.
+`benchmarks/human-preferences.json` records individual human picks as tiered
+preference signals; the same no-tuning rule applies to them, and they never
+gate a release.
 The exporter reads only catalogue glyphs and labels, not benchmark queries.
 
 With the pinned embedding model already cached:
