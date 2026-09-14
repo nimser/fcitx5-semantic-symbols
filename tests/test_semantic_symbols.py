@@ -102,6 +102,18 @@ for query, expected in checks.items():
     result = s.search(query, 6)
     assert expected.intersection(row["glyph"] for row in result), (query, result)
     print(query, round((time.monotonic() - started) * 1000), "ms", " ".join(row["glyph"] for row in result))
+# Development regressions: a second word changes both intent and the visible choices.
+contrasts = [
+    ("hot", {"🥵", "🔥", "🌶️"}, "hot dog", {"🌭"}),
+    ("broken", {"⛓️‍💥"}, "broken heart", {"💔"}),
+]
+for before, before_expected, after, after_expected in contrasts:
+    initial = [row["glyph"] for row in s.search(before, 7)]
+    refined = [row["glyph"] for row in s.search(after, 7)]
+    assert before_expected.intersection(initial[:3]), (before, initial)
+    assert after_expected.intersection(refined[:3]), (after, refined)
+    assert len(set(initial) & set(refined)) <= 3, (before, after, initial, refined)
+    print(before, "->", after, "new top-seven choices:", len(set(refined) - set(initial)))
 assert s.search("   ") == []
 assert s.search("check mark")[0]["label"] == "check mark"
 assert any(row["glyph"] == "👩‍💻" for row in catalogue())
