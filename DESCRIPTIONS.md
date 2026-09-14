@@ -88,6 +88,31 @@ indices remain available for rollback. Runtime never rebuilds an index or
 fetches a model. Setup may fetch the pinned model; `--offline --prepare` forbids
 that fetch and requires the cached files.
 
+## Pilot result (Qwen2.5-14B-Instruct-Q4_K_M, local)
+
+One full generation of 6,596 grounded descriptions, 354k tokens, about 80
+glyphs a minute on the iGPU, no failures. Three ways of using the result:
+
+| embedded text | dev MRR@28 | held-out MRR@28 | recall@1 |
+| --- | --- | --- | --- |
+| baseline (names, aliases, hand-written intent) | 0.958 | 0.678 | 0.694 |
+| generated description replacing it | 0.421 | 0.670 | 0.444 |
+| generated text plus the baseline text | 0.958 | 0.788 | 0.750 |
+| hand-written where it exists, generated elsewhere | 1.000 | 0.831 | 0.861 |
+
+Replacing the hand-written intent text is clearly wrong: it is flat on held-out
+queries and throws away every phrasing those 120 entries were written for.
+Keeping them and generating for the remaining ~6,480 glyphs is the variant
+worth shipping.
+
+It is not a uniform win. Against the human ratings the same bundle moves 🥲
+from first to third for "happy tears", and still misses the picks for "cold
+heart" and "party animal" entirely. Those answers lean on combinations and
+figurative association, which single-glyph retrieval cannot express at all, so
+the benchmark and the ratings are measuring different things. More ratings and
+a decision on combinations have to come before this is called an improvement
+for people rather than for a metric.
+
 ## 4. Compare and package only passing candidates
 
 ```sh
