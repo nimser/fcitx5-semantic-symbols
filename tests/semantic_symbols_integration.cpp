@@ -41,16 +41,16 @@ int main() {
         ic = instance.inputContextManager().findByUUID(uuid);
         ic->focusIn();
         ic->setCapabilityFlags(CapabilityFlag::Password);
-        assert(!key("Control+Alt+u"));
+        assert(!key("Control+Shift+U"));
         ic->setCapabilityFlags(CapabilityFlags());
         ic->inputPanel().setPreedit(Text("unfinished"));
-        assert(!key("Control+Alt+u"));
+        assert(!key("Control+Shift+U"));
         ic->inputPanel().reset();
-        assert(key("Control+Alt+u"));
+        assert(key("Control+Shift+U"));
         type("check marx");
         assert(key("BackSpace"));
         type("k");
-        assert(ic->inputPanel().auxUp().toString() == "Symbols: check mark");
+        assert(ic->inputPanel().auxUp().toString() == "check mark");
         stage = 1;
     });
     auto timer = instance.eventLoop().addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + 20000, 0,
@@ -64,21 +64,40 @@ int main() {
             auto candidates = ic->inputPanel().candidateList();
             if (stage == 1 && candidates && !candidates->empty()) {
                 assert(candidates->candidate(0).text().toString() == "✓");
+                // Glyph rows carry no label or comment; the name sits below.
+                assert(candidates->candidate(0).hasCustomLabel());
+                assert(candidates->candidate(0).customLabel().toString().empty());
+                assert(candidates->candidate(0).comment().toString().empty());
+                assert(candidates->layoutHint() == CandidateLayoutHint::Horizontal);
+                assert(ic->inputPanel().auxDown().toString() == "result");
                 assert(key("Down"));
                 assert(key("Up"));
+                // A single space extends the query; the popup keeps its glyphs.
+                assert(key("space"));
+                assert(ic->inputPanel().auxUp().toString() == "check mark ");
+                assert(ic->inputPanel().candidateList() &&
+                       !ic->inputPanel().candidateList()->empty());
                 frontend->call<ITestFrontend::pushCommitExpectation>("✓");
-                assert(key("Return"));
+                assert(key("space"));
                 assert(ic->inputPanel().auxUp().empty());
-                assert(key("Control+Alt+u"));
+                assert(key("Control+Shift+U"));
                 type("slow");
                 assert(key("Escape"));
-                assert(key("Control+Alt+u"));
+                assert(key("Control+Shift+U"));
                 type("forever");
                 stage = 2;
             } else if (stage == 2 && candidates && !candidates->empty()) {
                 assert(candidates->candidate(0).text().toString() == "∞");
+                frontend->call<ITestFrontend::pushCommitExpectation>("∞");
+                assert(key("Return"));
+                assert(key("Control+Shift+U"));
+                type("forever");
+                stage = 4;
+            } else if (stage == 4 && candidates && !candidates->empty()) {
                 assert(key("Control+u"));
-                assert(ic->inputPanel().auxUp().toString() == "Symbols: ");
+                assert(ic->inputPanel().auxUp().toString().empty());
+                assert(!ic->inputPanel().candidateList() ||
+                       ic->inputPanel().candidateList()->empty());
                 type("slow");
                 ic->focusOut();
                 assert(ic->inputPanel().auxUp().empty());
@@ -89,7 +108,8 @@ int main() {
                 assert(!ic->inputPanel().candidateList());
                 frontend->call<ITestFrontend::destroyInputContext>(uuid);
                 instance.exit();
-                std::cout << "Native popup, insertion, cancellation, stale replies and privacy gates passed\n";
+                std::cout << "Glyph row, name preview, space commit, cancellation, stale replies "
+                             "and privacy gates passed\n";
                 return false;
             }
             source->setNextInterval(20000);

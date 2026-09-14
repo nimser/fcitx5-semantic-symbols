@@ -94,6 +94,8 @@ Result lookup(const std::string &query) {
 struct State {
     std::string query;
     uint64_t generation = 0;
+    Rows rows;
+    std::string status;
 };
 
 class SymbolCandidate : public CandidateWord {
@@ -101,7 +103,9 @@ public:
     SymbolCandidate(std::string glyph, std::string label,
                     std::function<void(InputContext *, std::string)> commit)
         : CandidateWord(Text(glyph)), glyph_(std::move(glyph)), commit_(std::move(commit)) {
-        setComment(Text(std::move(label)));
+        // The name belongs on the preview line, not next to every glyph.
+        FCITX_UNUSED(label);
+        setCustomLabel(Text());
     }
     void select(InputContext *ic) const override {
         auto commit = commit_;
@@ -153,7 +157,7 @@ public:
 
     bool triggerTempMode(const KeyEvent &event) override {
         auto *ic = event.inputContext();
-        if (event.isRelease() || !event.key().check(Key("Control+Alt+U")) ||
+        if (event.isRelease() || !event.key().check(Key("Control+Shift+U")) ||
             ic->capabilityFlags().testAny(CapabilityFlag::PasswordOrSensitive)) {
             return false;
         }
@@ -163,9 +167,11 @@ public:
         }
         auto *state = property(ic);
         state->query.clear();
+        state->rows.clear();
+        state->status = "Describe an emoji or symbol";
         ++state->generation;
         state->setActive(true);
-        show(ic, {}, "Describe an emoji or symbol; Enter inserts, Esc cancels");
+        show(ic);
         return true;
     }
 
@@ -174,6 +180,8 @@ public:
         if (state) {
             ++state->generation;
             state->query.clear();
+            state->rows.clear();
+            state->status.clear();
             state->setActive(false);
         }
         ic->inputPanel().reset();
@@ -188,25 +196,30 @@ public:
         auto *ic = event.inputContext();
         auto *state = property(ic);
         const auto key = event.key();
-        if (key.check(FcitxKey_Escape) || key.check(Key("Control+Alt+U"))) {
+        if (key.check(FcitxKey_Escape) || key.check(Key("Control+Shift+U"))) {
             reset(ic);
             return true;
         }
         auto candidates = ic->inputPanel().candidateList();
-        if (key.check(FcitxKey_Return) || key.check(FcitxKey_KP_Enter)) {
+        // A trailing space is inert for the search, so the second one commits
+        // while multi-word queries keep their separators.
+        const bool spaceCommits =
+            key.check(FcitxKey_space) && !state->query.empty() && state->query.back() == ' ';
+        if (key.check(FcitxKey_Return) || key.check(FcitxKey_KP_Enter) || spaceCommits) {
             if (candidates && !candidates->empty() && candidates->cursorIndex() >= 0) {
                 candidates->candidate(candidates->cursorIndex()).select(ic);
             }
             return true;
         }
-        if (key.check(FcitxKey_Down) || key.check(FcitxKey_Up) || key.check(FcitxKey_Tab) ||
-            key.check(Key("Shift+Tab"))) {
+        if (key.check(FcitxKey_Right) || key.check(FcitxKey_Left) || key.check(FcitxKey_Down) ||
+            key.check(FcitxKey_Up) || key.check(FcitxKey_Tab) || key.check(Key("Shift+Tab"))) {
             if (candidates && candidates->toCursorMovable()) {
-                if (key.check(FcitxKey_Up) || key.check(Key("Shift+Tab"))) {
+                if (key.check(FcitxKey_Left) || key.check(FcitxKey_Up) || key.check(Key("Shift+Tab"))) {
                     candidates->toCursorMovable()->prevCandidate();
                 } else {
                     candidates->toCursorMovable()->nextCandidate();
                 }
+                showHeader(ic);
                 ic->updateUserInterface(UserInterfaceComponent::InputPanel);
             }
             return true;
@@ -216,6 +229,7 @@ public:
                 auto *pages = candidates->toPageable();
                 if (key.check(FcitxKey_Page_Up) && pages->hasPrev()) { pages->prev(); }
                 if (key.check(FcitxKey_Page_Down) && pages->hasNext()) { pages->next(); }
+                showHeader(ic);
                 ic->updateUserInterface(UserInterfaceComponent::InputPanel);
             }
             return true;
@@ -240,7 +254,16 @@ public:
             state->query += text;
         }
         auto generation = ++state->generation;
-        show(ic, {}, state->query.empty() ? "Describe an emoji or symbol" : "Searching...");
+        if (state->query.empty()) {
+            state->rows.clear();
+            state->status = "Describe an emoji or symbol";
+            show(ic);
+        } else {
+            // Keep the previous glyphs on screen: replacing them with an empty
+            // list for the few milliseconds of a lookup is what flickers.
+            showHeader(ic);
+            ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        }
         if (!state->query.empty()) {
             auto ref = ic->watch();
             std::lock_guard lock(mutex_);
@@ -250,7 +273,9 @@ public:
                 if (!context) { return; }
                 auto *current = property(context);
                 if (!current->isActive() || current->generation != generation) { return; }
-                show(context, result.rows, result.error.empty() ? "Enter inserts; Esc cancels" : result.error);
+                current->rows = std::move(result.rows);
+                current->status = result.error.empty() ? "Space or Enter inserts; Esc cancels" : result.error;
+                show(context);
             };
             pending_ = true;
             ready_.notify_one();
@@ -259,23 +284,37 @@ public:
     }
 
 private:
-    void show(InputContext *ic, const Rows &rows, const std::string &status) {
+    // One reserved line: the typed query, then the highlighted glyph's name.
+    void showHeader(InputContext *ic) {
+        auto *state = property(ic);
         auto &panel = ic->inputPanel();
-        panel.reset();
-        panel.setAuxUp(Text("Symbols: " + property(ic)->query));
-        panel.setAuxDown(Text(status));
+        std::string name = state->status;
+        auto candidates = panel.candidateList();
+        if (candidates && candidates->toBulkCursor()) {
+            auto index = candidates->toBulkCursor()->globalCursorIndex();
+            if (index >= 0 && static_cast<size_t>(index) < state->rows.size()) {
+                name = state->rows[index].second;
+            }
+        }
+        panel.setAuxUp(Text(state->query));
+        panel.setAuxDown(Text(std::move(name)));
+    }
+
+    void show(InputContext *ic) {
+        auto *state = property(ic);
+        auto &panel = ic->inputPanel();
         auto list = std::make_unique<CommonCandidateList>();
-        list->setPageSize(6);
-        list->setLayoutHint(CandidateLayoutHint::Vertical);
-        for (const auto &[glyph, label] : rows) {
+        list->setPageSize(14);
+        list->setLayoutHint(CandidateLayoutHint::Horizontal);
+        for (const auto &[glyph, label] : state->rows) {
             list->append<SymbolCandidate>(glyph, label, [this](InputContext *context, std::string value) {
                 reset(context);
                 context->commitString(value);
             });
         }
-        list->setGlobalCursorIndex(rows.empty() ? -1 : 0);
+        list->setGlobalCursorIndex(state->rows.empty() ? -1 : 0);
         panel.setCandidateList(std::move(list));
-        ic->updatePreedit();
+        showHeader(ic);
         ic->updateUserInterface(UserInterfaceComponent::InputPanel);
     }
 

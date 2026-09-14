@@ -5,15 +5,18 @@ input mode that searches emoji **and** visible Unicode symbols together, by
 meaning, entirely on your machine.
 
 ```
-Control+Alt+U  ->  not sure              ->  ❓ 🤞 😕 ❔
-Control+Alt+U  ->  goes both ways        ->  ⇄ ↔ ⇌
-Control+Alt+U  ->  roughly the same      ->  ≈ ≡ ≅
-Control+Alt+U  ->  celebrate our success ->  🎉 👏 🙌 🥳 🏆
-Control+Alt+U  ->  at most               ->  ≤
+Control+Shift+U  ->  not sure              ->  ❓ 🤞 😕 ❔
+Control+Shift+U  ->  goes both ways        ->  ⇄ ↔ ⇌
+Control+Shift+U  ->  roughly the same      ->  ≈ ≡ ≅
+Control+Shift+U  ->  celebrate our success ->  🎉 👏 🙌 🥳 🏆
+Control+Shift+U  ->  at most               ->  ≤
 ```
 
-Enter inserts the highlighted candidate into whatever you were typing in.
-Escape cancels. No browser tab, no clipboard round trip, no network.
+The glyphs sit unlabelled in a row with the highlighted one's name on the line
+below, so you read meaning only when you need it. Enter inserts, and so does a
+second consecutive space — a trailing space is inert for the search, so phrases
+keep their separators and your hand never leaves the home row. Escape cancels.
+No browser tab, no clipboard round trip, no network.
 
 ## Why this exists
 
@@ -40,6 +43,8 @@ It also refuses to treat mathematical and typographic symbols as second-class:
   categories, plus hand-written intent descriptions for the glyphs whose
   official names hide their meaning ("left right arrow" is not how anyone asks
   for ↔).
+- The popup never blanks between keystrokes: the previous glyphs stay on screen
+  while the next lookup runs, so there is nothing to flicker.
 - The addon never blocks the event loop: lookups run on a worker thread and are
   dispatched back through Fcitx5's `EventDispatcher`. Every reply carries a
   generation counter, so a slow answer for an abandoned query is discarded
@@ -75,20 +80,19 @@ The script builds the addon into `~/.local/lib/fcitx5`, downloads and indexes
 the model, writes the addon descriptor and the user service, then restarts
 Fcitx5. Rerun it after an Fcitx5 ABI bump.
 
-Fcitx5's name-based Unicode search shares the default `Control+Alt+U` binding.
-Move it (Configure Fcitx5 -> Addons -> Unicode) or change the trigger in
-`addon.cpp`; upstream's own default for that addon is `Control+Alt+Shift+U`.
+`Control+Shift+U` is Quickphrase's default trigger. Clear it (Configure Fcitx5
+-> Addons -> Quickphrase) or change the trigger in `addon.cpp`.
 
 ## Keys
 
 | Key | Action |
 | --- | --- |
-| `Control+Alt+U` | Open, or close when already open |
-| Type freely | Refine the query |
-| `Up` / `Down`, `Tab` / `Shift+Tab` | Move through candidates |
+| `Control+Shift+U` | Open, or close when already open |
+| Type freely | Refine the query; a single space extends it |
+| Arrows, `Tab` / `Shift+Tab` | Move through candidates |
 | `Page Up` / `Page Down` | Page through candidates |
 | `Control+U` | Clear the query |
-| `Enter` | Insert the highlighted glyph |
+| `Enter`, or a second space | Insert the highlighted glyph |
 | `Escape` | Cancel |
 
 ## Tests
@@ -117,6 +121,9 @@ Ideas worth stealing from the web-app generation of emoji search:
 - **Multilingual queries.** A multilingual encoder would let the query be typed
   in the language you are already writing in — which, in an input method, is
   the obvious thing to want.
+- **A real grid.** classicui lays candidates out in one row or one column and
+  clips auxiliary text to a single line, so several rows of glyphs need either
+  an upstream change or a custom candidate window.
 - **Usage learning.** Rank recently chosen glyphs higher, the way every real
   input method does with words.
 
